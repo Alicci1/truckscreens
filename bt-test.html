@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Screen connection test</title>
+<style>
+:root{color-scheme:dark;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:#0b0f1c;color:#eaf1ff;font:16px/1.5 -apple-system,system-ui,sans-serif;padding:20px}
+button{display:block;width:100%;padding:18px;font-size:18px;font-weight:700;border:0;border-radius:14px;background:#39e5ff;color:#04131c;margin:10px 0}
+button.b{background:#263150;color:#eaf1ff}
+#log{background:#04050a;border-radius:12px;padding:12px;font:13px/1.6 ui-monospace,Menlo,monospace;white-space:pre-wrap;min-height:200px}
+.ok{color:#37e39a}.bad{color:#ff5b6e}
+</style></head><body>
+<h2>Screen connection test</h2>
+<p>Close LEDCanvas and nRF Connect first. Then tap:</p>
+<button id="go">1 · Connect to a screen</button>
+<button id="txt" class="b" disabled>2 · Send “HI” text to it</button>
+<button id="off" class="b" disabled>3 · Screen off / on</button>
+<div id="log"></div>
+<script>
+const SVC='0000c820-0000-1000-8000-00805f9b34fb',CMD='0000c821-0000-1000-8000-00805f9b34fb',DATA='0000c822-0000-1000-8000-00805f9b34fb',NOTE='0000c823-0000-1000-8000-00805f9b34fb';
+const L=(m,c='')=>{const e=document.getElementById('log');e.innerHTML+=`<span class="${c}">${new Date().toLocaleTimeString()} ${m}</span>\n`;e.scrollTop=1e9;};
+function crc16(b){let c=0xFFFF;for(const x of b){c^=x;for(let i=0;i<8;i++)c=(c&1)?(c>>>1)^0xA001:c>>>1;}return [(c>>8)&255,c&255];}
+let dev,cmd,note,power=true;
+L(navigator.bluetooth?'Web Bluetooth available':'NO Web Bluetooth in this browser — open in Bluefy','bad');
+document.getElementById('go').onclick=async()=>{
+  try{L('opening device chooser…');dev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'LED'}],optionalServices:[SVC]});L('chosen: '+dev.name,'ok');
+    L('step 1: gatt.connect()…');const gatt=await dev.gatt.connect();L('step 1 ok: linked','ok');
+    L('step 2: getPrimaryService(C820)…');const svc=await gatt.getPrimaryService(SVC);L('step 2 ok','ok');
+    L('step 3: characteristics…');cmd=await svc.getCharacteristic(CMD);await svc.getCharacteristic(DATA);note=await svc.getCharacteristic(NOTE);L('step 3 ok','ok');
+    L('step 4: startNotifications…');await note.startNotifications();note.addEventListener('characteristicvaluechanged',e=>L('reply: '+[...new Uint8Array(e.target.value.buffer)].map(b=>b.toString(16).padStart(2,'0')).join(' '),'ok'));L('step 4 ok — CONNECTED','ok');
+    dev.addEventListener('gattserverdisconnected',()=>L('disconnected','bad'));
+    document.getElementById('txt').disabled=false;document.getElementById('off').disabled=false;
+  }catch(e){L('FAILED: '+(e.name||'')+' '+(e.message||e),'bad');}
+};
+document.getElementById('off').onclick=async()=>{try{power=!power;const p=[0,3,0,1,power?1:0];await cmd.writeValueWithResponse(Uint8Array.from([...p,...crc16(p)]));L('sent screen '+(power?'on':'off'),'ok');}catch(e){L('FAILED: '+e.message,'bad');}};
+document.getElementById('txt').onclick=async()=>{try{
+  // brightness nudge as a simple visible command
+  const p=[0,1,1,30];await cmd.writeValueWithResponse(Uint8Array.from([...p,...crc16(p)]));L('sent brightness 30 (screen should dim)','ok');await new Promise(r=>setTimeout(r,1200));
+  const q=[0,1,1,100];await cmd.writeValueWithResponse(Uint8Array.from([...q,...crc16(q)]));L('sent brightness 100 (back to bright)','ok');
+}catch(e){L('FAILED: '+e.message,'bad');}};
+</script></body></html>
