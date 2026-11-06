@@ -1109,7 +1109,7 @@ class Screen{
     const total=gif.length,n=Math.ceil(total/P);
     for(let i=0;i<n;i++){const part=gif.subarray(i*P,Math.min(total,(i+1)*P)),len=part.length;
       const pkt=new Uint8Array(13+len);pkt.set([1,8,2,(total>>>24)&255,(total>>>16)&255,(total>>>8)&255,total&255,(i>>8)&255,i&255,(len>>8)&255,len&255],0);pkt.set(part,11);pkt.set(crc16(pkt.subarray(0,11+len)),11+len);
-      const next=this.wait(v=>v[0]===8&&v[1]===2&&v[3]===1);await this.data.writeValueWithResponse(pkt);await next;onProgress((i+1)/n);}
+      const next=this.wait(v=>(v[0]===1&&v[1]===1&&v[5]===1)||(v[0]===8&&v[1]===2&&v[3]===1)||(v[0]===1&&v[1]===2&&v[2]===1&&v[3]>1));await this.data.writeValueWithResponse(pkt);const r=await next;if(r[0]===1&&r[1]===2)throw new Error(this.side+': screen rejected chunk '+(i+1)+' (code '+r[3]+')');onProgress((i+1)/n);}
     const done=this.wait(v=>v[0]===1&&v[1]===2&&v[2]===1);await this.command([1,2,1,1]);const r=await done;
     if(r[3]!==1)throw new Error(this.side+': screen rejected the data (code '+r[3]+')');return 'sent';}
 }

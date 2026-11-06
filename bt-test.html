@@ -53,7 +53,7 @@ document.getElementById('up').onclick=async()=>{
     const first=await ack;if(first[3]===3){L('screen says it already has this file (crc match)','ok');}
     else{const total=GIF.length,n=Math.ceil(total/P);
       for(let i=0;i<n;i++){const part=GIF.subarray(i*P,Math.min(total,(i+1)*P)),len=part.length;const pkt=new Uint8Array(13+len);pkt.set([1,8,2,(total>>>24)&255,(total>>>16)&255,(total>>>8)&255,total&255,(i>>8)&255,i&255,(len>>8)&255,len&255],0);pkt.set(part,11);pkt.set(crc16(pkt.subarray(0,11+len)),11+len);
-        const next=wait(v=>v[0]===8&&v[1]===2,8000);L(`chunk ${i+1}/${n} (${pkt.length} bytes) header ${hexs(pkt.subarray(0,11))}`);await write(data,pkt);await next;}
+        const next=wait(v=>(v[0]===1&&v[1]===1&&v[5]===1)||(v[0]===1&&v[1]===2&&v[2]===1&&v[3]>1),8000);L(`chunk ${i+1}/${n} (${pkt.length} bytes) header ${hexs(pkt.subarray(0,11))}`);await write(data,pkt);const rr=await next;if(rr[0]===1&&rr[1]===2){L('screen rejected chunk '+(i+1)+' code '+rr[3],'bad');return;}}
       const fin=[1,2,1,1];const done=wait(v=>v[0]===1&&v[1]===2,8000);L('finish: '+hexs(fin));await write(cmd,Uint8Array.from([...fin,...crc16(fin)]));const r=await done;L('finish reply code '+r[3]+(r[3]===1?' = OK, picture should be showing':' = error'),r[3]===1?'ok':'bad');}
   }catch(e){L('FAILED: '+(e.message||e),'bad');}
 };
