@@ -13,21 +13,25 @@ button.b{background:#263150;color:#eaf1ff}
 <button id="go">1 · Connect to a screen</button>
 <button id="txt" class="b" disabled>2 · Send “HI” text to it</button>
 <button id="off" class="b" disabled>3 · Screen off / on</button>
+<button id="up" class="b" disabled>4 · Upload a tiny test picture (heart + HI)</button>
+<div style="display:flex;gap:8px;margin:6px 0"><label style="flex:1">Chunk <select id="chunk"><option>231</option><option>169</option><option>100</option><option>60</option><option>7</option></select></label><label style="flex:1">Write <select id="wmode"><option value="resp">with response</option><option value="noresp">without response</option></select></label></div>
 <div id="log"></div>
 <script>
 const SVC='0000c820-0000-1000-8000-00805f9b34fb',CMD='0000c821-0000-1000-8000-00805f9b34fb',DATA='0000c822-0000-1000-8000-00805f9b34fb',NOTE='0000c823-0000-1000-8000-00805f9b34fb';
 const L=(m,c='')=>{const e=document.getElementById('log');e.innerHTML+=`<span class="${c}">${new Date().toLocaleTimeString()} ${m}</span>\n`;e.scrollTop=1e9;};
 function crc16(b){let c=0xFFFF;for(const x of b){c^=x;for(let i=0;i<8;i++)c=(c&1)?(c>>>1)^0xA001:c>>>1;}return [(c>>8)&255,c&255];}
-let dev,cmd,note,power=true;
-L(navigator.bluetooth?'Web Bluetooth available':'NO Web Bluetooth in this browser — open in Bluefy','bad');
+let dev,cmd,data,note,power=true,waiters=[];
+const hexs=a=>[...a].map(b=>b.toString(16).padStart(2,'0')).join(' ');
+const wait=(pred,ms)=>new Promise((res,rej)=>{const t=setTimeout(()=>{waiters=waiters.filter(w=>w!==f);rej(new Error('no reply within '+ms+' ms'));},ms);const f=v=>{if(pred(v)){clearTimeout(t);res(v);return true;}return false;};waiters.push(f);});
+L(navigator.bluetooth?'Web Bluetooth available':'NO Web Bluetooth in this browser — open in Bluefy',navigator.bluetooth?'ok':'bad');
 document.getElementById('go').onclick=async()=>{
   try{L('opening device chooser…');dev=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'LED'}],optionalServices:[SVC]});L('chosen: '+dev.name,'ok');
     L('step 1: gatt.connect()…');const gatt=await dev.gatt.connect();L('step 1 ok: linked','ok');
     L('step 2: getPrimaryService(C820)…');const svc=await gatt.getPrimaryService(SVC);L('step 2 ok','ok');
-    L('step 3: characteristics…');cmd=await svc.getCharacteristic(CMD);await svc.getCharacteristic(DATA);note=await svc.getCharacteristic(NOTE);L('step 3 ok','ok');
-    L('step 4: startNotifications…');await note.startNotifications();note.addEventListener('characteristicvaluechanged',e=>L('reply: '+[...new Uint8Array(e.target.value.buffer)].map(b=>b.toString(16).padStart(2,'0')).join(' '),'ok'));L('step 4 ok — CONNECTED','ok');
+    L('step 3: characteristics…');cmd=await svc.getCharacteristic(CMD);data=await svc.getCharacteristic(DATA);note=await svc.getCharacteristic(NOTE);L('step 3 ok','ok');
+    L('step 4: startNotifications…');await note.startNotifications();note.addEventListener('characteristicvaluechanged',e=>{const v=new Uint8Array(e.target.value.buffer);L('reply: '+hexs(v),'ok');waiters=waiters.filter(w=>!w(v));});L('step 4 ok — CONNECTED','ok');
     dev.addEventListener('gattserverdisconnected',()=>L('disconnected','bad'));
-    document.getElementById('txt').disabled=false;document.getElementById('off').disabled=false;
+    document.getElementById('txt').disabled=false;document.getElementById('off').disabled=false;document.getElementById('up').disabled=false;
   }catch(e){L('FAILED: '+(e.name||'')+' '+(e.message||e),'bad');}
 };
 document.getElementById('off').onclick=async()=>{try{power=!power;const p=[0,3,0,1,power?1:0];await cmd.writeValueWithResponse(Uint8Array.from([...p,...crc16(p)]));L('sent screen '+(power?'on':'off'),'ok');}catch(e){L('FAILED: '+e.message,'bad');}};
@@ -36,4 +40,21 @@ document.getElementById('txt').onclick=async()=>{try{
   const p=[0,1,1,30];await cmd.writeValueWithResponse(Uint8Array.from([...p,...crc16(p)]));L('sent brightness 30 (screen should dim)','ok');await new Promise(r=>setTimeout(r,1200));
   const q=[0,1,1,100];await cmd.writeValueWithResponse(Uint8Array.from([...q,...crc16(q)]));L('sent brightness 100 (back to bright)','ok');
 }catch(e){L('FAILED: '+e.message,'bad');}};
+
+const C32T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(c>>>1)^0x82F63B78:c>>>1;t[n]=c>>>0;}return t;})();
+function crc32c(bytes){let c=0xFFFFFFFF;for(const b of bytes)c=C32T[(c^b)&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+const GIF=Uint8Array.from(atob('R0lGODdhYAAQAIcAAAAAAP9Glv///wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACwAAAAAYAAQAEAIoQABCBxIsKDBgwgTKlzIsGHCABAjSpTIUIDFixgtItTosKNHghQBhKwoYGPJgxw/quw4MYDHlAVhZsy4sqZNhTAJypx58ebNlkBdLsw5kKhAoz5rBoXoEKnTk0mjDmQqtarVq1izajX4VCdPpFsLhhw5FGpMs17DOlw6keTXrmoZsiVrsi5KtHEfLm2K92hfAGDzGmz58u/Or4LlCk3MeGBAADs='),c=>c.charCodeAt(0));
+document.getElementById('up').onclick=async()=>{
+  const P=+document.getElementById('chunk').value,mode=document.getElementById('wmode').value;
+  const write=(ch,pkt)=>mode==='resp'?ch.writeValueWithResponse(pkt):ch.writeValueWithoutResponse(pkt);
+  try{L(`--- upload ${GIF.length} bytes, chunk ${P}, ${mode} ---`);
+    const c=crc32c(GIF);const start=[8,2,5,0,(c>>>24)&255,(c>>>16)&255,(c>>>8)&255,c&255];
+    const ack=wait(v=>v[0]===8&&v[1]===2,8000);L('start: '+hexs(start));await write(cmd,Uint8Array.from([...start,...crc16(start)]));
+    const first=await ack;if(first[3]===3){L('screen says it already has this file (crc match)','ok');}
+    else{const total=GIF.length,n=Math.ceil(total/P);
+      for(let i=0;i<n;i++){const part=GIF.subarray(i*P,Math.min(total,(i+1)*P)),len=part.length;const pkt=new Uint8Array(13+len);pkt.set([1,8,2,(total>>>24)&255,(total>>>16)&255,(total>>>8)&255,total&255,(i>>8)&255,i&255,(len>>8)&255,len&255],0);pkt.set(part,11);pkt.set(crc16(pkt.subarray(0,11+len)),11+len);
+        const next=wait(v=>v[0]===8&&v[1]===2,8000);L(`chunk ${i+1}/${n} (${pkt.length} bytes) header ${hexs(pkt.subarray(0,11))}`);await write(data,pkt);await next;}
+      const fin=[1,2,1,1];const done=wait(v=>v[0]===1&&v[1]===2,8000);L('finish: '+hexs(fin));await write(cmd,Uint8Array.from([...fin,...crc16(fin)]));const r=await done;L('finish reply code '+r[3]+(r[3]===1?' = OK, picture should be showing':' = error'),r[3]===1?'ok':'bad');}
+  }catch(e){L('FAILED: '+(e.message||e),'bad');}
+};
 </script></body></html>
